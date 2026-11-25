@@ -1,0 +1,79 @@
+name: iOS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: Compilar y probar en el simulador
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compilar la app y las pruebas
+        run: |
+          set -o pipefail
+          xcodebuild -version
+          mkdir -p evidencia
+          xcodebuild build-for-testing \
+            -project Vesta.xcodeproj \
+            -scheme Vesta \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/Vesta" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee evidencia/compilacion.log
+
+      - name: Arrancar un iPhone con iOS 18.5
+        id: simulator
+        timeout-minutes: 5
+        run: |
+          device="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"].get("com.apple.CoreSimulator.SimRuntime.iOS-18-5", [])
+          for device in devices:
+              if device["name"] == "iPhone 16":
+                  print(device["udid"])
+                  sys.exit(0)
+          sys.exit("No está disponible el iPhone 16 con iOS 18.5")
+          ')"
+          echo "id=$device" >> "$GITHUB_OUTPUT"
+          xcrun simctl bootstatus "$device" -b
+
+      - name: Ejecutar Swift Testing
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Vesta.xcodeproj \
+            -scheme Vesta \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
+            -derivedDataPath "$RUNNER_TEMP/Vesta" \
+            -resultBundlePath evidencia/Pruebas.xcresult \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee evidencia/pruebas.log
+          xcrun xcresulttool get test-results summary --path evidencia/Pruebas.xcresult > evidencia/resumen.json
+          python3 -c 'import json, sys; sys.exit(0 if json.load(sys.stdin)["passedTests"] >= 22 else "Se esperaban al menos 22 pruebas superadas")' < evidencia/resumen.json
+
+      - name: Capturar el acceso en el simulador
+        run: |
+          device='${{ steps.simulator.outputs.id }}'
+          app="$RUNNER_TEMP/Vesta/Build/Products/Debug-iphonesimulator/Vesta.app"
+          xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState discharging --batteryLevel 100
+          xcrun simctl install "$device" "$app"
+          xcrun simctl launch --terminate-running-process "$device" com.carlospc05.vesta
+          sleep 3
+          xcrun simctl io "$device" screenshot evidencia/acceso.png
+
+      - name: Publicar resultados y captura
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: evidencia-ios
+          path: evidencia/
