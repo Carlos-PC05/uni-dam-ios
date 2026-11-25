@@ -8,7 +8,6 @@ struct VestaApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
-                .preferredColorScheme(.light)
         }
     }
 }

@@ -16,15 +16,20 @@ struct RootView: View {
                             .foregroundStyle(VestaTheme.ink)
                     }
                 }
+                .preferredColorScheme(.light)
             case .signedOut:
                 AuthFlowView()
+                    .preferredColorScheme(.dark)
             case .incomplete:
                 CompleteProfileView()
+                    .preferredColorScheme(.dark)
             case .ready:
                 if let profile = model.profile, let finance = model.finance {
                     MainTabView(profile: profile, finance: finance)
+                        .preferredColorScheme(.light)
                 } else {
                     AuthFlowView()
+                        .preferredColorScheme(.dark)
                 }
             }
         }
