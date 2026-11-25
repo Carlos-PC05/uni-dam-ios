@@ -5,3 +5,5 @@ xcuserdata/
 *.xcuserstate
 *.xcresult
 .swiftpm/
+.env
+.env.*
